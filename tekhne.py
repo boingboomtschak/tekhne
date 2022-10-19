@@ -28,6 +28,7 @@ if args.get("file_log"):
 input_path = os.path.abspath(args['input'])
 input_fname = os.path.basename(args['input'])
 output_path = args['output'] if args['output'] else os.path.splitext(input_fname)[0] + '.wgsl'
+log.debug("Reading input file...")
 cuda = ''
 try:
     with open(input_path, 'r') as f:
@@ -46,25 +47,123 @@ except Exception as e:
 
 # Setting up CUDA grammar
 grammar = '''
-start: kernelSpec
-
-
-
-
-kernelBody: statement*
-
-kernelDecl: CNAME "(" [kernelArg ("," kernelArg)*] ")" 
-
-kernelSpec: "__global__" TYPE kernelDeclaration "{" kernelBody "}"
+%import common.WS
+%ignore WS
 
 %import common.CNAME
-%import common.WS
 %import common.INT
 %import common.SIGNED_INT
 %import common.DECIMAL
-%ignore WS
+
+BOOLEAN : "true"
+        | "false"
+
+atom : "(" expression ")"
+     | INT
+     | SIGNED_INT
+     | DECIMAL
+     | CNAME
+     | BOOLEAN
+
+level1 : atom "++"
+       | atom "--"
+       | atom "(" (expression ("," expression)*)? ")"
+       | atom "[" expression "]"
+       | atom "." CNAME
+       | atom
+
+level2 : "++" level1
+       | "+" level1
+       | "-" level1
+       | "--" level1
+       | "!" level1
+       | "*" level1
+       | "~" level1
+       | level1
+
+level3 : level3 "*" level2
+       | level3 "/" level2
+       | level3 "%" level2
+       | level2
+
+level4 : level4 "+" level3
+       | level4 "-" level3
+       | level3
+
+level5 : level5 "<<" level4
+       | level5 ">>" level4
+       | level4
+
+level6 : level6 "<" level5
+       | level6 ">" level5
+       | level6 "<=" level5
+       | level6 ">=" level5
+       | level5
+
+level7 : level7 "==" level6
+       | level7 "!=" level6
+       | level6
+
+level8 : level8 "&" level7
+       | level7
+
+level9 : level9 "^" level8
+       | level8
+
+level10 : level10 "|" level9
+        | level9
+
+level11 : level11 "&&" level10
+        | level10
+
+level12 : level12 "||" level11
+        | level11
+
+expression : level12
+
+lvalue : CNAME "[" expression "]"
+       | CNAME "." CNAME
+       | CNAME
+
+assignment  : lvalue "=" expression ";"
+            | lvalue "+=" expression ";"
+            | lvalue "-=" expression ";"
+            | lvalue "*=" expression ";"
+            | lvalue "/=" expression ";"
+
+type : CNAME "*"? 
+
+declaration : type CNAME ";"
+            | type CNAME "=" expression ";"
+
+conditional : "if" "(" expression ")" "{" statement* "}"
+            | "if" "(" expression ")" statement
+
+while_loop : "while" "(" expression ")" "{" statement* "}"
+
+for_loop : "for" "(" declaration expression expression ")" "{" statement* "}"
+         | "for" "(" declaration expression expression ")" statement
+
+statement : for_loop
+          | while_loop
+          | conditional
+          | declaration
+          | expression
+          | assignment
+
+argument: type CNAME 
+
+kernelDecl: CNAME "(" argument ("," argument)* ")" 
+
+kernelSpec: "__global__" type kernelDeclaration "{" statement* "}"
+
+start: kernelSpec
+
 '''
 
 # Setting up Lark parser
-#parser = Lark(grammar)
+log.debug("Setting up parser...")
+parser = Lark(grammar)
 
+tree = parser.parse(cuda)
+print(tree.pretty())
