@@ -2,3 +2,4 @@
 *.cu
 *.cuh
 *.wgsl
+*.png

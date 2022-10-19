@@ -2,7 +2,7 @@
 import argparse, os, logging, sys
 import coloredlogs
 from colorama import Fore, Back, Style
-from lark import Lark
+from lark import Lark, tree
 
 # Setting up argument parser
 parser = argparse.ArgumentParser(description="CUDA to WGSL transpiler")
@@ -18,7 +18,7 @@ streamFmt=f'{Fore.CYAN}[{Fore.GREEN}tekhne{Fore.CYAN}]{Style.RESET_ALL} %(messag
 logLevel = 'DEBUG' if args.get('debug') else 'INFO'
 coloredlogs.install(fmt=streamFmt, level=logLevel, logger=log)
 if args.get("file_log"):
-    log.info("Logging to 'tekhne.log'...")
+    log.debug("Logging to 'tekhne.log'...")
     fileFmt=f'[tekhne] %(asctime)s : %(message)s'
     fileHandler = logging.FileHandler('tekhne.log')
     fileFormatter = logging.Formatter(fileFmt)
@@ -28,6 +28,7 @@ if args.get("file_log"):
 input_path = os.path.abspath(args['input'])
 input_fname = os.path.basename(args['input'])
 output_path = args['output'] if args['output'] else os.path.splitext(input_fname)[0] + '.wgsl'
+
 log.debug("Reading input file...")
 cuda = ''
 try:
@@ -69,7 +70,7 @@ level1 : atom "++"
        | atom "--"
        | atom "(" (expression ("," expression)*)? ")"
        | atom "[" expression "]"
-       | atom "." CNAME
+       | expression "." expression
        | atom
 
 level2 : "++" level1
@@ -141,8 +142,8 @@ conditional : "if" "(" expression ")" "{" statement* "}"
 
 while_loop : "while" "(" expression ")" "{" statement* "}"
 
-for_loop : "for" "(" declaration expression expression ")" "{" statement* "}"
-         | "for" "(" declaration expression expression ")" statement
+for_loop : "for" "(" declaration expression ";" expression ")" "{" statement* "}"
+         | "for" "(" declaration expression ";" expression ")" statement
 
 statement : for_loop
           | while_loop
@@ -151,19 +152,22 @@ statement : for_loop
           | expression
           | assignment
 
-argument: type CNAME 
+argument : type CNAME 
 
-kernelDecl: CNAME "(" argument ("," argument)* ")" 
+kerneldecl : CNAME "(" argument ("," argument)* ")" 
 
-kernelSpec: "__global__" type kernelDeclaration "{" statement* "}"
+kernelspec : "__global__" type kerneldecl "{" statement* "}"
 
-start: kernelSpec
-
+start : kernelspec
 '''
 
 # Setting up Lark parser
 log.debug("Setting up parser...")
-parser = Lark(grammar)
+parser = Lark(grammar, ambiguity='explicit')
 
-tree = parser.parse(cuda)
-print(tree.pretty())
+log.debug("Parsing input...")
+parsed = parser.parse(cuda)
+
+log.debug("Generating parse tree to 'parse-tree.png'")
+tree.pydot__tree_to_png(parsed, 'parse-tree.png')
+
