@@ -1,0 +1,4 @@
+colorama==0.4.5
+coloredlogs==15.0.1
+humanfriendly==10.0
+lark==1.1.3
