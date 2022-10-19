@@ -48,6 +48,7 @@ except Exception as e:
 
 # Setting up CUDA grammar
 grammar = '''
+%import common.NEWLINE
 %import common.WS
 %ignore WS
 
@@ -55,6 +56,11 @@ grammar = '''
 %import common.INT
 %import common.SIGNED_INT
 %import common.DECIMAL
+
+COMMENT : "//" /.*/ NEWLINE
+MULTICOMMENT : "/*" /.*/ "*/"
+%ignore COMMENT
+%ignore MULTICOMMENT
 
 BOOLEAN : "true"
         | "false"
@@ -69,7 +75,7 @@ atom : "(" expression ")"
 level1 : atom "++"
        | atom "--"
        | atom "(" (expression ("," expression)*)? ")"
-       | atom "[" expression "]"
+       | expression "[" expression "]"
        | expression "." expression
        | atom
 
@@ -122,9 +128,7 @@ level12 : level12 "||" level11
 
 expression : level12
 
-lvalue : CNAME "[" expression "]"
-       | CNAME "." CNAME
-       | CNAME
+lvalue : CNAME (("[" expression "]")|("." CNAME))*
 
 assignment  : lvalue "=" expression ";"
             | lvalue "+=" expression ";"
@@ -134,23 +138,26 @@ assignment  : lvalue "=" expression ";"
 
 type : CNAME "*"? 
 
-declaration : type CNAME ";"
-            | type CNAME "=" expression ";"
+cudaspec : ("__shared__")
 
-conditional : "if" "(" expression ")" "{" statement* "}"
-            | "if" "(" expression ")" statement
+declaration : cudaspec? type CNAME ("[" expression "]")* ("=" expression)? ";"
+            | cudaspec? type CNAME ("," CNAME)* ";"
+
+conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
 
 while_loop : "while" "(" expression ")" "{" statement* "}"
 
-for_loop : "for" "(" declaration expression ";" expression ")" "{" statement* "}"
-         | "for" "(" declaration expression ";" expression ")" statement
+for_loop : "for" "(" (declaration|assignment) expression ";" expression ")" "{" statement* "}"
+         | "for" "(" (declaration|assignment) expression ";" expression ")" statement
 
 statement : for_loop
           | while_loop
           | conditional
           | declaration
-          | expression
+          | expression ";"
           | assignment
+          | COMMENT
+          | MULTICOMMENT
 
 argument : type CNAME 
 
