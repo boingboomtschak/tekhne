@@ -48,19 +48,17 @@ except Exception as e:
 
 # Setting up CUDA grammar
 grammar = '''
-%import common.NEWLINE
 %import common.WS
 %ignore WS
+%import common.C_COMMENT
+%ignore C_COMMENT
+%import common.CPP_COMMENT
+%ignore CPP_COMMENT
 
 %import common.CNAME
 %import common.INT
 %import common.SIGNED_INT
 %import common.DECIMAL
-
-COMMENT : "//" /.*/ NEWLINE
-MULTICOMMENT : "/*" /.*/ "*/"
-%ignore COMMENT
-%ignore MULTICOMMENT
 
 BOOLEAN : "true"
         | "false"
@@ -145,10 +143,9 @@ declaration : cudaspec? type CNAME ("[" expression "]")* ("=" expression)? ";"
 
 conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
 
-while_loop : "while" "(" expression ")" "{" statement* "}"
+while_loop : "while" "(" expression ")" (("{" statement* "}")|statement)
 
-for_loop : "for" "(" (declaration|assignment) expression ";" expression ")" "{" statement* "}"
-         | "for" "(" (declaration|assignment) expression ";" expression ")" statement
+for_loop : "for" "(" (declaration|assignment) expression ";" expression ")" (("{" statement* "}")|statement)
 
 statement : for_loop
           | while_loop
@@ -156,8 +153,6 @@ statement : for_loop
           | declaration
           | expression ";"
           | assignment
-          | COMMENT
-          | MULTICOMMENT
 
 argument : type CNAME 
 
@@ -165,7 +160,7 @@ kerneldecl : CNAME "(" argument ("," argument)* ")"
 
 kernelspec : "__global__" type kerneldecl "{" statement* "}"
 
-start : kernelspec
+start : kernelspec*
 '''
 
 # Setting up Lark parser
@@ -177,4 +172,4 @@ parsed = parser.parse(cuda)
 
 log.debug("Generating parse tree to 'parse-tree.png'")
 tree.pydot__tree_to_png(parsed, 'parse-tree.png')
-
+log.debug("Parse tree generated.")
