@@ -138,7 +138,7 @@ assignment  : lvalue "=" expression ";"
 
 type : CNAME "*"? 
 
-cudaspec : ("__shared__")
+cudaspec : ("__shared__"|"__global__"|"__device__")
 
 declaration : cudaspec? type CNAME ("[" expression "]")* ("=" expression)? ";"
             | cudaspec? type CNAME ("," CNAME)* ";"
