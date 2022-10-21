@@ -1,16 +1,17 @@
-#! /usr/bin/python3
+#! /usr/bin/env python3
 import argparse, os, logging, sys
 import coloredlogs
 from colorama import Fore, Back, Style
 from lark import Lark, tree
 
 # Setting up argument parser
-parser = argparse.ArgumentParser(description="CUDA to WGSL transpiler")
-parser.add_argument("input", help="Path to input .cu file")
-parser.add_argument("-o", "--output", help="Path to output .wgsl file")
-parser.add_argument("-d", "--debug", action="store_true", help="Show debug information")
-parser.add_argument("-f" ,"--file-log", action="store_true", help="Store logs to 'tekhne.log'")
-args = vars(parser.parse_args())
+argparser = argparse.ArgumentParser(description="CUDA to WGSL transpiler")
+argparser.add_argument("input", help="Path to input .cu file")
+argparser.add_argument("-o", "--output", help="Path to output .wgsl file")
+argparser.add_argument("-d", "--debug", action="store_true", help="Show debug information")
+argparser.add_argument("-f" ,"--file-log", action="store_true", help="Store logs to 'tekhne.log'")
+argparser.add_argument("-t", "--parse-tree", action="store_true", help="Save parse tree to 'parse-tree.png'")
+args = vars(argparser.parse_args())
 
 # Setting up logger
 log = logging.getLogger(__name__)
@@ -70,59 +71,32 @@ atom : "(" expression ")"
      | CNAME
      | BOOLEAN
 
-level1 : atom "++"
-       | atom "--"
+level1 : atom ("++"|"--")?
        | atom "(" (expression ("," expression)*)? ")"
        | expression "[" expression "]"
        | expression "." expression
-       | atom
 
-level2 : "++" level1
-       | "+" level1
-       | "-" level1
-       | "--" level1
-       | "!" level1
-       | "*" level1
-       | "~" level1
-       | level1
+?level2 : ("++"|"+"|"--"|"-"|"!"|"*"|"~")? level1
 
-level3 : level3 "*" level2
-       | level3 "/" level2
-       | level3 "%" level2
-       | level2
+?level3 : (level3 ("*"|"/"|"%"))? level2
 
-level4 : level4 "+" level3
-       | level4 "-" level3
-       | level3
+?level4 : (level4 ("+"|"-"))? level3
 
-level5 : level5 "<<" level4
-       | level5 ">>" level4
-       | level4
+?level5 : (level5 ("<<"|">>"))? level4
 
-level6 : level6 "<" level5
-       | level6 ">" level5
-       | level6 "<=" level5
-       | level6 ">=" level5
-       | level5
+?level6 : (level6 ("<"|">"|"<="|">="))? level5
 
-level7 : level7 "==" level6
-       | level7 "!=" level6
-       | level6
+?level7 : (level7 ("=="|"!="))? level6
 
-level8 : level8 "&" level7
-       | level7
+?level8 : (level8 "&")? level7
 
-level9 : level9 "^" level8
-       | level8
+?level9 : (level9 "^")? level8
 
-level10 : level10 "|" level9
-        | level9
+?level10 : (level10 "|")? level9
 
-level11 : level11 "&&" level10
-        | level10
+?level11 : (level11 "&&")? level10
 
-level12 : level12 "||" level11
-        | level11
+?level12 : (level12 "||")? level11
 
 expression : level12
 
@@ -170,6 +144,9 @@ parser = Lark(grammar, ambiguity='explicit')
 log.debug("Parsing input...")
 parsed = parser.parse(cuda)
 
-log.debug("Generating parse tree to 'parse-tree.png'")
-tree.pydot__tree_to_png(parsed, 'parse-tree.png')
-log.debug("Parse tree generated.")
+if args['parse_tree']:
+       log.debug("Generating parse tree to 'parse-tree.png'")
+       tree.pydot__tree_to_png(parsed, 'parse-tree.png')
+       log.debug("Parse tree generated.")
+
+log.debug("Exiting...")
