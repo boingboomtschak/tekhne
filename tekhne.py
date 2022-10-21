@@ -50,10 +50,10 @@ except Exception as e:
 # Setting up CUDA grammar
 grammar = '''
 %import common.WS
-%ignore WS
 %import common.C_COMMENT
-%ignore C_COMMENT
 %import common.CPP_COMMENT
+%ignore WS
+%ignore C_COMMENT
 %ignore CPP_COMMENT
 
 %import common.CNAME
@@ -64,40 +64,28 @@ grammar = '''
 BOOLEAN : "true"
         | "false"
 
-atom : "(" expression ")"
-     | INT
+?atom : INT
      | SIGNED_INT
      | DECIMAL
      | CNAME
      | BOOLEAN
-
-level1 : atom ("++"|"--")?
-       | atom "(" (expression ("," expression)*)? ")"
-       | expression "[" expression "]"
-       | expression "." expression
-
+     | "(" expression ")"
+     | expression
+?level1 : atom ("++"|"--")?
+       | level1 "(" (atom ("," atom)*)? ")"
+       | level1 "[" atom "]"
+       | level1 "." atom
 ?level2 : ("++"|"+"|"--"|"-"|"!"|"*"|"~")? level1
-
 ?level3 : (level3 ("*"|"/"|"%"))? level2
-
 ?level4 : (level4 ("+"|"-"))? level3
-
 ?level5 : (level5 ("<<"|">>"))? level4
-
 ?level6 : (level6 ("<"|">"|"<="|">="))? level5
-
 ?level7 : (level7 ("=="|"!="))? level6
-
 ?level8 : (level8 "&")? level7
-
 ?level9 : (level9 "^")? level8
-
 ?level10 : (level10 "|")? level9
-
 ?level11 : (level11 "&&")? level10
-
 ?level12 : (level12 "||")? level11
-
 expression : level12
 
 lvalue : CNAME (("[" expression "]")|("." CNAME))*
@@ -108,7 +96,8 @@ assignment  : lvalue "=" expression ";"
             | lvalue "*=" expression ";"
             | lvalue "/=" expression ";"
 
-type : CNAME "*"? 
+type : CNAME 
+ptrtype : CNAME "*"
 
 cudaspec : ("__shared__"|"__global__"|"__device__")
 
@@ -128,7 +117,7 @@ statement : for_loop
           | expression ";"
           | assignment
 
-argument : type CNAME 
+argument : (type|ptrtype) CNAME 
 
 kerneldecl : CNAME "(" argument ("," argument)* ")" 
 
