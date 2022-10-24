@@ -1,7 +1,11 @@
 #! /usr/bin/env python3
-import argparse, os, logging, sys
+'''Simple CUDA -> WGSL transpiler'''
+import argparse
+import os
+import logging
+import sys
 import coloredlogs
-from colorama import Fore, Back, Style
+from colorama import Fore, Style
 from lark import Lark, tree
 
 # Setting up argument parser
@@ -10,19 +14,20 @@ argparser.add_argument("input", help="Path to input .cu file")
 argparser.add_argument("-o", "--output", help="Path to output .wgsl file")
 argparser.add_argument("-d", "--debug", action="store_true", help="Show debug information")
 argparser.add_argument("-f" ,"--file-log", action="store_true", help="Store logs to 'tekhne.log'")
-argparser.add_argument("-t", "--parse-tree", action="store_true", help="Save parse tree to 'parse-tree.png'")
+argparser.add_argument("-t", "--parse-tree", action="store_true", \
+    help="Save parse tree to 'parse-tree.png'")
 args = vars(argparser.parse_args())
 
 # Setting up logger
 log = logging.getLogger(__name__)
 streamFmt=f'{Fore.CYAN}[{Fore.GREEN}tekhne{Fore.CYAN}]{Style.RESET_ALL} %(message)s'
-logLevel = 'DEBUG' if args.get('debug') else 'INFO'
-coloredlogs.install(fmt=streamFmt, level=logLevel, logger=log)
+LOG_LEVEL = 'DEBUG' if args.get('debug') else 'INFO'
+coloredlogs.install(fmt=streamFmt, level=LOG_LEVEL, logger=log)
 if args.get("file_log"):
     log.debug("Logging to 'tekhne.log'...")
-    fileFmt=f'[tekhne] %(asctime)s : %(message)s'
+    FILE_FMT='[tekhne] %(asctime)s : %(message)s'
     fileHandler = logging.FileHandler('tekhne.log')
-    fileFormatter = logging.Formatter(fileFmt)
+    fileFormatter = logging.Formatter(FILE_FMT)
     fileHandler.setFormatter(fileFormatter)
     log.addHandler(fileHandler)
 
@@ -31,24 +36,22 @@ input_fname = os.path.basename(args['input'])
 output_path = args['output'] if args['output'] else os.path.splitext(input_fname)[0] + '.wgsl'
 
 log.debug("Reading input file...")
-cuda = ''
+CUDA = ''
 try:
-    with open(input_path, 'r') as f:
-        cuda = f.read()
+    with open(input_path, 'r', encoding='utf-8') as f:
+        CUDA = f.read()
 except FileNotFoundError:
-    log.error(f'\'{input_fname}\' not found in \'{os.path.dirname(input_path)}\'!')
-    sys.exit(1)    
+    log.error('\'%s\' not found in \'%s\'!', input_fname, os.path.dirname(input_path))
+    sys.exit(1)
 except PermissionError:
-    log.error(f'No permission to read \'{input_path}\'!')
+    log.error('No permission to read \'%s\'!', input_path)
     sys.exit(1)
 except OSError:
-    log.error(f'OS error reading \'{input_path}\'')
-except Exception as e:
-    log.error(f'Unknown error reading \'{input_path}\'!')
+    log.error('OS error reading \'%s\'', input_path)
     sys.exit(1)
 
 # Setting up CUDA grammar
-grammar = '''
+CUDA_GRAMMAR = '''
 %import common.WS
 %import common.C_COMMENT
 %import common.CPP_COMMENT
@@ -70,11 +73,10 @@ BOOLEAN : "true"
      | CNAME
      | BOOLEAN
      | "(" expression ")"
-     | expression
 ?level1 : atom ("++"|"--")?
-       | level1 "(" (atom ("," atom)*)? ")"
-       | level1 "[" atom "]"
-       | level1 "." atom
+       | level1 "(" (expression ("," expression)*)? ")"
+       | level1 "[" expression "]"
+       | level1 "." CNAME 
 ?level2 : ("++"|"+"|"--"|"-"|"!"|"*"|"~")? level1
 ?level3 : (level3 ("*"|"/"|"%"))? level2
 ?level4 : (level4 ("+"|"-"))? level3
@@ -128,14 +130,14 @@ start : kernelspec*
 
 # Setting up Lark parser
 log.debug("Setting up parser...")
-parser = Lark(grammar, ambiguity='explicit')
+parser = Lark(CUDA_GRAMMAR, parser="lalr")
 
 log.debug("Parsing input...")
-parsed = parser.parse(cuda)
+parsed = parser.parse(CUDA)
 
 if args['parse_tree']:
-       log.debug("Generating parse tree to 'parse-tree.png'")
-       tree.pydot__tree_to_png(parsed, 'parse-tree.png')
-       log.debug("Parse tree generated.")
+    log.debug("Generating parse tree to 'parse-tree.png'")
+    tree.pydot__tree_to_png(parsed, 'parse-tree.png')
+    log.debug("Parse tree generated.")
 
 log.debug("Exiting...")

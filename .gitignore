@@ -3,3 +3,4 @@
 *.cuh
 *.wgsl
 *.png
+.vscode/
