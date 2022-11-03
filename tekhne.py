@@ -6,7 +6,7 @@ import logging
 import sys
 import coloredlogs
 from colorama import Fore, Style
-from lark import Lark, Visitor
+from lark import Lark, Token
 from lark import tree as LarkTree
 
 # Setting up argument parser
@@ -78,9 +78,21 @@ BOOLEAN : "true"
        | level1 "(" (expression ("," expression)*)? ")"
        | level1 "[" expression "]"
        | level1 "." CNAME 
-?level2 : ("++"|"+"|"--"|"-"|"!"|"*"|"~")? level1
-?level3 : (level3 ("*"|"/"|"%"))? level2
-?level4 : (level4 ("+"|"-"))? level3
+?level2 : "++" level1 -> pre_inc
+        | "+" level1 -> pos
+        | "--" level1 -> pre_dec
+        | "-" level1 -> neg
+        | "!" level1 -> not
+        | "*" level1 -> deref
+        | "~" level1 
+        | level1
+?level3 : level3 "*" level2 -> mult
+        | level3 "/" level2 -> div
+        | level3 "%" level2 -> mod
+        | level2
+?level4 : level4 "+" level3 -> plus 
+        | level4 "-" level3 -> minus
+        | level3 
 ?level5 : (level5 ("<<"|">>"))? level4
 ?level6 : (level6 ("<"|">"|"<="|">="))? level5
 ?level7 : (level7 ("=="|"!="))? level6
@@ -102,10 +114,10 @@ assignment  : lvalue "=" expression ";"
 ctype : CNAME 
 ptrtype : CNAME "*"
 
-cudaspec : ("__shared__"|"__global__"|"__device__")
+CUDASPEC : ("__shared__"|"__global__"|"__device__")
 
-declaration : cudaspec? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
-            | cudaspec? ctype CNAME ("," CNAME)* ";"
+declaration : CUDASPEC? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
+            | CUDASPEC? ctype CNAME ("," CNAME)* ";"
 
 conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
 
@@ -131,19 +143,100 @@ start : kernelspec*
 
 class WGSLCodeGenerator:        
     def visit(self, tree):
-        print(tree.data)
+        if isinstance(tree, Token):
+            return str(tree)
         try:
             return getattr(self, tree.data)(tree)
         except AttributeError:
             return self.__default__(tree)
     def __default__(self, tree):
-        log.info("Default visitor!")
+        log.warning(f"Default visitor visiting {tree.data}!")
+        [self.visit(c) for c in tree.children]
     def start(self, tree):
         log.info("start")
         [self.visit(c) for c in tree.children]
     def kernelspec(self, tree):
         log.info("kernelspec")
         [self.visit(c) for c in tree.children]
+    def kerneldecl(self, tree):
+        log.info('kerneldecl')
+        [self.visit(c) for c in tree.children]
+    def argument(self, tree):
+        log.info('argument')
+        [self.visit(c) for c in tree.children]
+    def statement(self, tree):
+        log.info('statement')
+        [self.visit(c) for c in tree.children]
+    def for_loop(self, tree):
+        log.info('for loop')
+        [self.visit(c) for c in tree.children]
+    def while_loop(self, tree):
+        log.info('while loop')
+        [self.visit(c) for c in tree.children]
+    def conditional(self, tree):
+        log.info('conditonal')
+        [self.visit(c) for c in tree.children]
+    def declaration(self, tree):
+        log.info('declaration')
+        [self.visit(c) for c in tree.children]
+    def ctype(self, tree):
+        log.info('ctype')
+        [self.visit(c) for c in tree.children]
+    def ptrtype(self, tree):
+        log.info('ptrtype')
+        [self.visit(c) for c in tree.children]
+    def assignment(self, tree):
+        log.info('assignment')
+        [self.visit(c) for c in tree.children]
+    def lvalue(self, tree):
+        log.info('lvalue')
+        [self.visit(c) for c in tree.children]
+    def expression(self, tree):
+        log.info('expression')
+        [self.visit(c) for c in tree.children]
+    def level12(self, tree):
+        log.info('level12')
+        [self.visit(c) for c in tree.children]
+    def level11(self, tree):
+        log.info('level11')
+        [self.visit(c) for c in tree.children]
+    def level10(self, tree):
+        log.info('level10')
+        [self.visit(c) for c in tree.children]
+    def level9(self, tree):
+        log.info('level9')
+        [self.visit(c) for c in tree.children]
+    def level8(self, tree):
+        log.info('level8')
+        [self.visit(c) for c in tree.children]
+    def level7(self, tree):
+        log.info('level7')
+        [self.visit(c) for c in tree.children]
+    def level6(self, tree):
+        log.info('level6')
+        [self.visit(c) for c in tree.children]
+    def level5(self, tree):
+        log.info('level5')
+        [self.visit(c) for c in tree.children]
+    def level4(self, tree):
+        log.info('level4')
+        log.info(dir(tree))
+        [self.visit(c) for c in tree.children]
+    def level3(self, tree):
+        log.info('level3')
+        log.info(type(tree))
+        [self.visit(c) for c in tree.children]
+    def level2(self, tree):
+        log.info('level2')
+        [self.visit(c) for c in tree.children]
+    def level1(self, tree):
+        log.info('level1')
+        [self.visit(c) for c in tree.children]
+    def atom(self, tree):
+        log.info('atom')
+        [self.visit(c) for c in tree.children]
+    
+    
 
 # Setting up Lark parser
 log.debug("Setting up parser...")
