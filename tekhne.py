@@ -6,7 +6,8 @@ import logging
 import sys
 import coloredlogs
 from colorama import Fore, Style
-from lark import Lark, tree
+from lark import Lark, Visitor
+from lark import tree as LarkTree
 
 # Setting up argument parser
 argparser = argparse.ArgumentParser(description="CUDA to WGSL transpiler")
@@ -98,13 +99,13 @@ assignment  : lvalue "=" expression ";"
             | lvalue "*=" expression ";"
             | lvalue "/=" expression ";"
 
-type : CNAME 
+ctype : CNAME 
 ptrtype : CNAME "*"
 
 cudaspec : ("__shared__"|"__global__"|"__device__")
 
-declaration : cudaspec? type CNAME ("[" expression "]")* ("=" expression)? ";"
-            | cudaspec? type CNAME ("," CNAME)* ";"
+declaration : cudaspec? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
+            | cudaspec? ctype CNAME ("," CNAME)* ";"
 
 conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
 
@@ -119,14 +120,30 @@ statement : for_loop
           | expression ";"
           | assignment
 
-argument : (type|ptrtype) CNAME 
+argument : (ctype|ptrtype) CNAME 
 
 kerneldecl : CNAME "(" argument ("," argument)* ")" 
 
-kernelspec : "__global__" type kerneldecl "{" statement* "}"
+kernelspec : "__global__" ctype kerneldecl "{" statement* "}"
 
 start : kernelspec*
 '''
+
+class WGSLCodeGenerator:        
+    def visit(self, tree):
+        print(tree.data)
+        try:
+            return getattr(self, tree.data)(tree)
+        except AttributeError:
+            return self.__default__(tree)
+    def __default__(self, tree):
+        log.info("Default visitor!")
+    def start(self, tree):
+        log.info("start")
+        [self.visit(c) for c in tree.children]
+    def kernelspec(self, tree):
+        log.info("kernelspec")
+        [self.visit(c) for c in tree.children]
 
 # Setting up Lark parser
 log.debug("Setting up parser...")
@@ -137,7 +154,12 @@ parsed = parser.parse(CUDA)
 
 if args['parse_tree']:
     log.debug("Generating parse tree to 'parse-tree.png'")
-    tree.pydot__tree_to_png(parsed, 'parse-tree.png')
+    LarkTree.pydot__tree_to_png(parsed, 'parse-tree.png')
     log.debug("Parse tree generated.")
+
+log.debug("Running code generator...")
+WGSLCodeGenerator().visit(parsed)
+
+#log.debug(parsed)
 
 log.debug("Exiting...")
