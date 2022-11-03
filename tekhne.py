@@ -74,10 +74,12 @@ BOOLEAN : "true"
      | CNAME
      | BOOLEAN
      | "(" expression ")"
-?level1 : atom ("++"|"--")?
-       | level1 "(" (expression ("," expression)*)? ")"
-       | level1 "[" expression "]"
-       | level1 "." CNAME 
+?level1 : atom "++" -> inc
+        | atom "--" -> dec
+        | level1 "(" (expression ("," expression)*)? ")" -> call
+        | level1 "[" expression "]" -> idx_access
+        | level1 "." CNAME -> prop_access
+        | atom
 ?level2 : "++" level1 -> pre_inc
         | "+" level1 -> pos
         | "--" level1 -> pre_dec
@@ -93,14 +95,27 @@ BOOLEAN : "true"
 ?level4 : level4 "+" level3 -> plus 
         | level4 "-" level3 -> minus
         | level3 
-?level5 : (level5 ("<<"|">>"))? level4
-?level6 : (level6 ("<"|">"|"<="|">="))? level5
-?level7 : (level7 ("=="|"!="))? level6
-?level8 : (level8 "&")? level7
-?level9 : (level9 "^")? level8
-?level10 : (level10 "|")? level9
-?level11 : (level11 "&&")? level10
-?level12 : (level12 "||")? level11
+?level5 : level5 "<<" level4 -> lshift
+        | level5 ">>" level4 -> rshift
+        | level4
+?level6 : level6 "<" level5 -> lt
+        | level6 ">" level5 -> gt
+        | level6 "<=" level5 -> lte
+        | level6 ">=" level5 -> gte
+        | level5
+?level7 : level7 "==" level6 -> eq
+        | level7 "!=" level6 -> neq
+        | level6
+?level8 : level8 "&" level7 -> bit_and
+        | level7
+?level9 : level9 "^" level8 -> bit_xor
+        | level8 
+?level10 : level10 "|" level9 -> bit_or
+         | level9
+?level11 : level11 "&&" level10 -> and
+         | level10
+?level12 : level12 "||" level11 -> or
+         | level11 
 expression : level12
 
 lvalue : CNAME (("[" expression "]")|("." CNAME))*
@@ -116,8 +131,8 @@ ptrtype : CNAME "*"
 
 CUDASPEC : ("__shared__"|"__global__"|"__device__")
 
-declaration : CUDASPEC? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
-            | CUDASPEC? ctype CNAME ("," CNAME)* ";"
+declaration : CUDASPEC? ctype CNAME ("[" expression "]")* ("=" expression)? ";" -> array_declaration
+            | CUDASPEC? ctype CNAME ("," CNAME)+ ";"
 
 conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
 
@@ -193,44 +208,6 @@ class WGSLCodeGenerator:
         [self.visit(c) for c in tree.children]
     def expression(self, tree):
         log.info('expression')
-        [self.visit(c) for c in tree.children]
-    def level12(self, tree):
-        log.info('level12')
-        [self.visit(c) for c in tree.children]
-    def level11(self, tree):
-        log.info('level11')
-        [self.visit(c) for c in tree.children]
-    def level10(self, tree):
-        log.info('level10')
-        [self.visit(c) for c in tree.children]
-    def level9(self, tree):
-        log.info('level9')
-        [self.visit(c) for c in tree.children]
-    def level8(self, tree):
-        log.info('level8')
-        [self.visit(c) for c in tree.children]
-    def level7(self, tree):
-        log.info('level7')
-        [self.visit(c) for c in tree.children]
-    def level6(self, tree):
-        log.info('level6')
-        [self.visit(c) for c in tree.children]
-    def level5(self, tree):
-        log.info('level5')
-        [self.visit(c) for c in tree.children]
-    def level4(self, tree):
-        log.info('level4')
-        log.info(dir(tree))
-        [self.visit(c) for c in tree.children]
-    def level3(self, tree):
-        log.info('level3')
-        log.info(type(tree))
-        [self.visit(c) for c in tree.children]
-    def level2(self, tree):
-        log.info('level2')
-        [self.visit(c) for c in tree.children]
-    def level1(self, tree):
-        log.info('level1')
         [self.visit(c) for c in tree.children]
     def atom(self, tree):
         log.info('atom')
