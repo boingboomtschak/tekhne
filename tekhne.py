@@ -69,11 +69,11 @@ BOOLEAN : "true"
         | "false"
 
 ?atom : INT
-     | SIGNED_INT
-     | DECIMAL
-     | CNAME
-     | BOOLEAN
-     | "(" expression ")"
+      | SIGNED_INT
+      | DECIMAL
+      | CNAME
+      | BOOLEAN
+      | "(" expression ")"
 ?level1 : atom "++" -> inc
         | atom "--" -> dec
         | level1 "(" (expression ("," expression)*)? ")" -> call
@@ -84,9 +84,9 @@ BOOLEAN : "true"
         | "+" level1 -> pos
         | "--" level1 -> pre_dec
         | "-" level1 -> neg
-        | "!" level1 -> not
+        | "!" level1 -> log_not
+        | "~" level1 -> bit_not
         | "*" level1 -> deref
-        | "~" level1 
         | level1
 ?level3 : level3 "*" level2 -> mult
         | level3 "/" level2 -> div
@@ -112,27 +112,31 @@ BOOLEAN : "true"
         | level8 
 ?level10 : level10 "|" level9 -> bit_or
          | level9
-?level11 : level11 "&&" level10 -> and
+?level11 : level11 "&&" level10 -> log_and
          | level10
-?level12 : level12 "||" level11 -> or
+?level12 : level12 "||" level11 -> log_or
          | level11 
 expression : level12
 
 lvalue : CNAME (("[" expression "]")|("." CNAME))*
 
-assignment  : lvalue "=" expression ";"
-            | lvalue "+=" expression ";"
-            | lvalue "-=" expression ";"
-            | lvalue "*=" expression ";"
-            | lvalue "/=" expression ";"
+assignment : lvalue "=" expression ";"
+           | lvalue "+=" expression ";" -> inc_assignment
+           | lvalue "-=" expression ";" -> dec_assignment
+           | lvalue "*=" expression ";" -> mul_assignment
+           | lvalue "/=" expression ";" -> div_assignment
 
 ctype : CNAME 
 ptrtype : CNAME "*"
 
-CUDASPEC : ("__shared__"|"__global__"|"__device__")
+shared : "__shared__"
+global : "__global__"
+device : "__device__"
 
-declaration : CUDASPEC? ctype CNAME ("[" expression "]")* ("=" expression)? ";" -> array_declaration
-            | CUDASPEC? ctype CNAME ("," CNAME)+ ";"
+expr_stmt : expression ";"
+
+declaration : shared? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
+            | shared? ctype CNAME ("," CNAME)+ ";"
 
 conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
 
@@ -140,18 +144,18 @@ while_loop : "while" "(" expression ")" (("{" statement* "}")|statement)
 
 for_loop : "for" "(" (declaration|assignment) expression ";" expression ")" (("{" statement* "}")|statement)
 
-statement : for_loop
-          | while_loop
-          | conditional
-          | declaration
-          | expression ";"
-          | assignment
+?statement : for_loop
+           | while_loop
+           | conditional
+           | declaration
+           | expr_stmt
+           | assignment
 
 argument : (ctype|ptrtype) CNAME 
 
 kerneldecl : CNAME "(" argument ("," argument)* ")" 
 
-kernelspec : "__global__" ctype kerneldecl "{" statement* "}"
+kernelspec : global ctype kerneldecl "{" statement* "}"
 
 start : kernelspec*
 '''
@@ -164,56 +168,101 @@ class WGSLCodeGenerator:
             return getattr(self, tree.data)(tree)
         except AttributeError:
             return self.__default__(tree)
+    def visit_children(self, children, joiner=""):
+        return joiner.join([self.visit(c) for c in children])
     def __default__(self, tree):
         log.warning(f"Default visitor visiting {tree.data}!")
-        [self.visit(c) for c in tree.children]
+        return "".join([self.visit(c) for c in tree.children])
     def start(self, tree):
-        log.info("start")
-        [self.visit(c) for c in tree.children]
+        return "".join([self.visit(c) for c in tree.children])
     def kernelspec(self, tree):
-        log.info("kernelspec")
-        [self.visit(c) for c in tree.children]
+        buf = "@compute\n"
+        buf += self.visit(tree.children[2])
+        buf += "{\n" + self.visit_children(tree.children[3:]) + "\n}\n"
+        return buf
     def kerneldecl(self, tree):
-        log.info('kerneldecl')
-        [self.visit(c) for c in tree.children]
-    def argument(self, tree):
-        log.info('argument')
-        [self.visit(c) for c in tree.children]
-    def statement(self, tree):
-        log.info('statement')
-        [self.visit(c) for c in tree.children]
+        # TODO: WGSL builtins
+        # TODO: CUDA kernel args -> uniform bindings
+        return "fn main()" 
     def for_loop(self, tree):
-        log.info('for loop')
-        [self.visit(c) for c in tree.children]
+        buf = "for ("
+        buf += self.visit_children(tree.children[0:3], "; ") + ") "
+        if len(tree.children) > 4:
+            buf += "{\n" + self.visit_children(tree.children[3:]) + "}\n"
+        else:
+            buf += "\n"
+        return buf
     def while_loop(self, tree):
-        log.info('while loop')
-        [self.visit(c) for c in tree.children]
-    def conditional(self, tree):
-        log.info('conditonal')
-        [self.visit(c) for c in tree.children]
-    def declaration(self, tree):
-        log.info('declaration')
-        [self.visit(c) for c in tree.children]
-    def ctype(self, tree):
-        log.info('ctype')
-        [self.visit(c) for c in tree.children]
-    def ptrtype(self, tree):
-        log.info('ptrtype')
-        [self.visit(c) for c in tree.children]
-    def assignment(self, tree):
-        log.info('assignment')
-        [self.visit(c) for c in tree.children]
-    def lvalue(self, tree):
-        log.info('lvalue')
-        [self.visit(c) for c in tree.children]
-    def expression(self, tree):
-        log.info('expression')
-        [self.visit(c) for c in tree.children]
-    def atom(self, tree):
-        log.info('atom')
-        [self.visit(c) for c in tree.children]
-    
-    
+        buf = "while (" + self.visit(tree.children[0]) + ") "
+        if len(tree.children) > 2:
+            buf += "{\n" + self.visit_children(tree.children[1:]) + "}\n"
+        else:
+            buf += self.visit(tree.children[1])
+        return buf
+    # def conditional(self, tree): # TODO
+
+    def inc(self, tree):
+        return self.visit(tree.children[0]) + "++"
+    def dec(self, tree):
+        return self.visit(tree.children[0]) + "--"
+    def call(self, tree):
+        buf = self.visit(tree.children[0]) 
+        buf += "(" + self.visit_children(tree.children[1:], joiner=", ") + ")"
+        return buf
+    def idx_access(self, tree):
+        return self.visit(tree.children[0]) + "[" + self.visit(tree.children[1]) + "]"
+    def prop_access(self, tree):
+        return self.visit(tree.children[0]) + "." + self.visit(tree.children[1])
+    def pre_inc(self, tree):
+        return "++" + self.visit(tree.children[0])
+    def pos(self, tree):
+        return "+" + self.visit(tree.children[0])
+    def pre_dec(self, tree):
+        return "--" + self.visit(tree.children[0])
+    def neg(self, tree):
+        return "-" + self.visit(tree.children[0])
+    def log_not(self, tree):
+        return "!" + self.visit(tree.children[0])
+    def bit_not(self, tree):
+        return "~" + self.visit(tree.children[0])
+    def deref(self, tree):
+        return "*" + self.visit(tree.children[0])
+    def mult(self, tree):
+        return self.visit(tree.children[0]) + " * " + self.visit(tree.children[1])
+    def div(self, tree):
+        return self.visit(tree.children[0]) + " / " + self.visit(tree.children[1])
+    def mod(self, tree):
+        return self.visit(tree.children[0]) + " % " + self.visit(tree.children[1])
+    def plus(self, tree):
+        return self.visit(tree.children[0]) + " + " + self.visit(tree.children[1])
+    def minus(self, tree):
+        return self.visit(tree.children[0]) + " - " + self.visit(tree.children[1])
+    def lshift(self, tree):
+        return self.visit(tree.children[0]) + " << " + self.visit(tree.children[1])
+    def rshift(self, tree):
+        return self.visit(tree.children[0]) + " >> " + self.visit(tree.children[1])
+    def lt(self, tree):
+        return self.visit(tree.children[0]) + " < " + self.visit(tree.children[1])
+    def gt(self, tree):
+        return self.visit(tree.children[0]) + " > " + self.visit(tree.children[1])
+    def lte(self, tree):
+        return self.visit(tree.children[0]) + " <= " + self.visit(tree.children[1])
+    def gte(self, tree):
+        return self.visit(tree.children[0]) + " >= " + self.visit(tree.children[1])
+    def eq(self, tree):
+        return self.visit(tree.children[0]) + " == " + self.visit(tree.children[1])
+    def neq(self, tree):
+        return self.visit(tree.children[0]) + " != " + self.visit(tree.children[1])
+    def bit_and(self, tree):
+        return self.visit(tree.children[0]) + " & " + self.visit(tree.children[1])
+    def bit_xor(self, tree):
+        return self.visit(tree.children[0]) + " ^ " + self.visit(tree.children[1])
+    def bit_or(self, tree):
+        return self.visit(tree.children[0]) + " | " + self.visit(tree.children[1])
+    def log_and(self, tree):
+        return self.visit(tree.children[0]) + " && " + self.visit(tree.children[1])
+    def log_or(self, tree):
+        return self.visit(tree.children[0]) + " || " + self.visit(tree.children[1])
 
 # Setting up Lark parser
 log.debug("Setting up parser...")
@@ -228,7 +277,7 @@ if args['parse_tree']:
     log.debug("Parse tree generated.")
 
 log.debug("Running code generator...")
-WGSLCodeGenerator().visit(parsed)
+log.info(WGSLCodeGenerator().visit(parsed))
 
 #log.debug(parsed)
 
