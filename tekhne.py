@@ -136,9 +136,11 @@ device : "__device__"
 expr_stmt : expression ";"
 
 declaration : shared? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
-            | shared? ctype CNAME ("," CNAME)+ ";"
+            | shared? ctype CNAME ("," CNAME)+ ";" -> mult_declaration
 
-conditional : "if" "(" expression ")" (("{" statement* "}")|statement) ("else" ("{" statement* "}")|statement)*
+conditional_else : "else" (("{" statement* "}")|statement)
+conditional_if : "if" "(" expression ")" (("{" statement* "}")|statement)
+conditional : conditional_if conditional_else*
 
 while_loop : "while" "(" expression ")" (("{" statement* "}")|statement)
 
@@ -160,7 +162,13 @@ kernelspec : global ctype kerneldecl "{" statement* "}"
 start : kernelspec*
 '''
 
-class WGSLCodeGenerator:        
+
+
+class WGSLCodeGenerator:      
+    TYPE_REDEFS = {
+        'int' : 'i32',
+        'float' : 'f32'
+    }  
     def visit(self, tree):
         if isinstance(tree, Token):
             return str(tree)
@@ -186,11 +194,11 @@ class WGSLCodeGenerator:
         return "fn main()" 
     def for_loop(self, tree):
         buf = "for ("
-        buf += self.visit_children(tree.children[0:3], "; ") + ") "
+        buf += self.visit_children(tree.children[0:3], "; ") + ")"
         if len(tree.children) > 4:
-            buf += "{\n" + self.visit_children(tree.children[3:]) + "}\n"
+            buf += " {\n" + self.visit_children(tree.children[3:]) + "}\n"
         else:
-            buf += "\n"
+            buf += "\n" + self.visit(tree.children[3]) 
         return buf
     def while_loop(self, tree):
         buf = "while (" + self.visit(tree.children[0]) + ") "
@@ -199,8 +207,18 @@ class WGSLCodeGenerator:
         else:
             buf += self.visit(tree.children[1])
         return buf
-    # def conditional(self, tree): # TODO
-
+    #def conditional(self, tree): # TODO
+    def declaration(self, tree):
+        buf = f"var {self.visit(tree.children[1])} : {self.visit(tree.children[0])}"
+        if len(tree.children) > 2:
+            buf += " = " + self.visit(tree.children[2])
+        buf += ";\n"
+        return buf
+    def ctype(self, tree):
+        tok = self.visit(tree.children[0])
+        if tok in self.TYPE_REDEFS:
+            return self.TYPE_REDEFS[tok]
+        return tok
     def inc(self, tree):
         return self.visit(tree.children[0]) + "++"
     def dec(self, tree):
