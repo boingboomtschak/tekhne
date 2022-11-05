@@ -116,9 +116,9 @@ BOOLEAN : "true"
          | level10
 ?level12 : level12 "||" level11 -> log_or
          | level11 
-expression : level12
+?expression : level12
 
-lvalue : CNAME (("[" expression "]")|("." CNAME))*
+?lvalue : CNAME (("[" expression "]")|("." CNAME))*
 
 assignment : lvalue "=" expression ";"
            | lvalue "+=" expression ";" -> inc_assignment
@@ -129,14 +129,14 @@ assignment : lvalue "=" expression ";"
 ctype : CNAME 
 ptrtype : CNAME "*"
 
-shared : "__shared__"
-global : "__global__"
-device : "__device__"
+SHARED : "__shared__"
+GLOBAL : "__global__"
+DEVICE : "__device__"
 
-expr_stmt : expression ";"
+expr_statement : expression ";"
 
-declaration : shared? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
-            | shared? ctype CNAME ("," CNAME)+ ";" -> mult_declaration
+declaration : SHARED? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
+            | SHARED? ctype CNAME ("," CNAME)+ ";" -> mult_declaration
 
 conditional_else : "else" (("{" statement* "}")|statement)
 conditional_if : "if" "(" expression ")" (("{" statement* "}")|statement)
@@ -146,29 +146,40 @@ while_loop : "while" "(" expression ")" (("{" statement* "}")|statement)
 
 for_loop : "for" "(" (declaration|assignment) expression ";" expression ")" (("{" statement* "}")|statement)
 
-?statement : for_loop
+statement : for_loop
            | while_loop
            | conditional
            | declaration
-           | expr_stmt
+           | expr_statement
            | assignment
 
 argument : (ctype|ptrtype) CNAME 
 
 kerneldecl : CNAME "(" argument ("," argument)* ")" 
 
-kernelspec : global ctype kerneldecl "{" statement* "}"
+kernelspec : GLOBAL ctype kerneldecl "{" statement* "}"
 
 start : kernelspec*
 '''
 
 
-
+'''
+CodeGen todos:
+- Scope tabbing
+- Fix declaration newlining - still some weird issues with extra newlines around conditionals (in test.cu)
+- Quick pre-visitor for builtins, need to track builtins inside kerneldecl and dump in fn main
+  - Need to track builtins per kernel (may have multiple per input file) so no global tracking
+    in code generator
+- Uniform binding dumps for CUDA kernel args, also needs to happen in kerneldecl 
+- Token-specific visitor rule to replace builtins (global translation dict like TYPE_REDEFS needed)
+'''
 class WGSLCodeGenerator:      
     TYPE_REDEFS = {
         'int' : 'i32',
         'float' : 'f32'
     }  
+    def __init__(self):
+        self.depth = 0
     def visit(self, tree):
         if isinstance(tree, Token):
             return str(tree)
@@ -186,39 +197,68 @@ class WGSLCodeGenerator:
     def kernelspec(self, tree):
         buf = "@compute\n"
         buf += self.visit(tree.children[2])
-        buf += "{\n" + self.visit_children(tree.children[3:]) + "\n}\n"
+        buf += "{\n" + self.visit_children(tree.children[3:]) + "}"
         return buf
     def kerneldecl(self, tree):
-        # TODO: WGSL builtins
-        # TODO: CUDA kernel args -> uniform bindings
-        return "fn main()" 
+        return "fn main()" # See todos for changes here
     def for_loop(self, tree):
         buf = "for ("
-        buf += self.visit_children(tree.children[0:3], "; ") + ")"
+        buf += self.visit(tree.children[0]) + " "
+        buf += self.visit(tree.children[1]) + "; "
+        buf += self.visit(tree.children[2]) + ")"
         if len(tree.children) > 4:
-            buf += " {\n" + self.visit_children(tree.children[3:]) + "}\n"
+            buf += " {\n" + self.visit_children(tree.children[3:]) + "}"
         else:
             buf += "\n" + self.visit(tree.children[3]) 
         return buf
     def while_loop(self, tree):
         buf = "while (" + self.visit(tree.children[0]) + ") "
         if len(tree.children) > 2:
-            buf += "{\n" + self.visit_children(tree.children[1:]) + "}\n"
+            buf += "{\n" + self.visit_children(tree.children[1:]) + "}"
         else:
-            buf += self.visit(tree.children[1])
+            buf += "\n" + self.visit(tree.children[1])
         return buf
-    #def conditional(self, tree): # TODO
+    def conditional_if(self, tree):
+        buf = f'if ({self.visit(tree.children[0])})'
+        if len(tree.children) > 2:
+            buf += " {\n" + self.visit_children(tree.children[1:]) + "}"
+        else:
+            buf += "\n" + self.visit(tree.children[1])
+        return buf
+    def conditional_else(self, tree):
+        buf = 'else'
+        if len(tree.children) > 1:
+            buf += " {\n" + self.visit_children(tree.children) + "}"
+        else:
+            buf += "\n" + self.visit(tree.children[0])
+        return buf
+    def conditional(self, tree):
+        return self.visit_children(tree.children)
     def declaration(self, tree):
         buf = f"var {self.visit(tree.children[1])} : {self.visit(tree.children[0])}"
         if len(tree.children) > 2:
             buf += " = " + self.visit(tree.children[2])
-        buf += ";\n"
+        buf += ";"
         return buf
+    def statement(self, tree):
+        return self.visit(tree.children[0]) + "\n"
     def ctype(self, tree):
         tok = self.visit(tree.children[0])
         if tok in self.TYPE_REDEFS:
             return self.TYPE_REDEFS[tok]
         return tok
+    def assignment(self, tree):
+        return f'{self.visit(tree.children[0])} = {self.visit(tree.children[1])};'
+    def inc_assignment(self, tree):
+        return f'{self.visit(tree.children[0])} += {self.visit(tree.children[1])};'
+    def dec_assignment(self, tree):
+        return f'{self.visit(tree.children[0])} -= {self.visit(tree.children[1])};'
+    def mul_assignment(self, tree):
+        return f'{self.visit(tree.children[0])} *= {self.visit(tree.children[1])};'
+    def div_assignment(self, tree):
+        return f'{self.visit(tree.children[0])} /= {self.visit(tree.children[1])};'
+    def expr_statement(self, tree):
+        return self.visit(tree.children[0]) + ";"
     def inc(self, tree):
         return self.visit(tree.children[0]) + "++"
     def dec(self, tree):
@@ -295,8 +335,8 @@ if args['parse_tree']:
     log.debug("Parse tree generated.")
 
 log.debug("Running code generator...")
-log.info(WGSLCodeGenerator().visit(parsed))
-
-#log.debug(parsed)
+log.debug("Generated code:")
+if args.get('debug'):
+    sys.stdout.write(WGSLCodeGenerator().visit(parsed) + "\n")
 
 log.debug("Exiting...")
