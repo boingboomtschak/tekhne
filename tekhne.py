@@ -73,7 +73,7 @@ BOOLEAN : "true"
       | DECIMAL
       | CNAME
       | BOOLEAN
-      | "(" expression ")"
+      | "(" expression ")" -> paren
 ?level1 : atom "++" -> inc
         | atom "--" -> dec
         | level1 "(" (expression ("," expression)*)? ")" -> call
@@ -135,8 +135,9 @@ DEVICE : "__device__"
 
 expr_statement : expression ";"
 
-declaration : SHARED? ctype CNAME ("[" expression "]")* ("=" expression)? ";"
-            | SHARED? ctype CNAME ("," CNAME)+ ";" -> mult_declaration
+declaration : ctype CNAME ("[" expression "]")* ("=" expression)? ";"
+            | ctype CNAME ("," CNAME)+ ";" -> mult_declaration
+            | SHARED ctype CNAME ("[" expression "]")* ("=" expression)? ";" -> shared_declaration
 
 conditional_else : "else" (("{" statement* "}")|statement)
 conditional_if : "if" "(" expression ")" (("{" statement* "}")|statement)
@@ -165,28 +166,30 @@ start : kernelspec*
 
 '''
 CodeGen todos:
-- Scope tabbing
+- Need to write rule for multi declarations
 - Fix declaration newlining - still some weird issues with extra newlines around conditionals (in test.cu)
 - Quick pre-visitor for builtins, need to track builtins inside kerneldecl and dump in fn main
   - Need to track builtins per kernel (may have multiple per input file) so no global tracking
     in code generator
 - Uniform binding dumps for CUDA kernel args, also needs to happen in kerneldecl 
 - Token-specific visitor rule to replace builtins (global translation dict like TYPE_REDEFS needed)
+- Figure out what needs to be replaced with __syncthreads() calls
+- Need to handle shared declarations
 '''
-class WGSLCodeGenerator:      
+class WGSLCodeGenerator:    
     TYPE_REDEFS = {
         'int' : 'i32',
         'float' : 'f32'
     }  
-    def __init__(self):
+    def __init__(self, tab='    '):
         self.depth = 0
+        self.TAB = tab
     def visit(self, tree):
         if isinstance(tree, Token):
             return str(tree)
-        try:
+        if hasattr(self, tree.data):
             return getattr(self, tree.data)(tree)
-        except AttributeError:
-            return self.__default__(tree)
+        return self.__default__(tree)
     def visit_children(self, children, joiner=""):
         return joiner.join([self.visit(c) for c in children])
     def __default__(self, tree):
@@ -197,7 +200,9 @@ class WGSLCodeGenerator:
     def kernelspec(self, tree):
         buf = "@compute\n"
         buf += self.visit(tree.children[2])
-        buf += "{\n" + self.visit_children(tree.children[3:]) + "}"
+        self.depth += 1
+        buf += " {\n" + self.visit_children(tree.children[3:]) + "}\n"
+        self.depth -= 1
         return buf
     def kerneldecl(self, tree):
         return "fn main()" # See todos for changes here
@@ -206,33 +211,46 @@ class WGSLCodeGenerator:
         buf += self.visit(tree.children[0]) + " "
         buf += self.visit(tree.children[1]) + "; "
         buf += self.visit(tree.children[2]) + ")"
+        self.depth += 1
         if len(tree.children) > 4:
-            buf += " {\n" + self.visit_children(tree.children[3:]) + "}"
+            buf += " {\n" + self.visit_children(tree.children[3:]) + ((self.depth - 1) * self.TAB) + "}"
         else:
             buf += "\n" + self.visit(tree.children[3]) 
+        self.depth -= 1
         return buf
     def while_loop(self, tree):
         buf = "while (" + self.visit(tree.children[0]) + ") "
+        self.depth += 1
         if len(tree.children) > 2:
-            buf += "{\n" + self.visit_children(tree.children[1:]) + "}"
+            buf += "{\n" + self.visit_children(tree.children[1:]) + ((self.depth - 1) * self.TAB) + "}"
         else:
             buf += "\n" + self.visit(tree.children[1])
+        self.depth -= 1
         return buf
     def conditional_if(self, tree):
         buf = f'if ({self.visit(tree.children[0])})'
+        self.depth += 1
         if len(tree.children) > 2:
-            buf += " {\n" + self.visit_children(tree.children[1:]) + "}"
+            buf += " {\n" + self.visit_children(tree.children[1:]) + ((self.depth - 1) * self.TAB) + "} "
         else:
             buf += "\n" + self.visit(tree.children[1])
+        self.depth -= 1
         return buf
     def conditional_else(self, tree):
-        buf = 'else'
-        if len(tree.children) > 1:
-            buf += " {\n" + self.visit_children(tree.children) + "}"
+        buf = 'else '
+        if tree.children[0].children[0].data == 'conditional':
+            buf += self.visit(tree.children[0].children[0])
         else:
-            buf += "\n" + self.visit(tree.children[0])
+            self.depth += 1
+            if len(tree.children) > 1:
+                buf += "{\n" + self.visit_children(tree.children) + ((self.depth - 1) * self.TAB) + "}"
+            else:
+                buf += "\n" + self.visit(tree.children[0])
+            self.depth -= 1
         return buf
     def conditional(self, tree):
+        if len(tree.children) == 2 and len(tree.children[0].children) == 2:
+            return self.visit(tree.children[0]) + (self.depth * self.TAB) + self.visit(tree.children[1])
         return self.visit_children(tree.children)
     def declaration(self, tree):
         buf = f"var {self.visit(tree.children[1])} : {self.visit(tree.children[0])}"
@@ -241,7 +259,7 @@ class WGSLCodeGenerator:
         buf += ";"
         return buf
     def statement(self, tree):
-        return self.visit(tree.children[0]) + "\n"
+        return (self.depth * self.TAB) + self.visit(tree.children[0]) + "\n"
     def ctype(self, tree):
         tok = self.visit(tree.children[0])
         if tok in self.TYPE_REDEFS:
@@ -259,6 +277,8 @@ class WGSLCodeGenerator:
         return f'{self.visit(tree.children[0])} /= {self.visit(tree.children[1])};'
     def expr_statement(self, tree):
         return self.visit(tree.children[0]) + ";"
+    def paren(self, tree):
+        return "(" + self.visit(tree.children[0]) + ")"
     def inc(self, tree):
         return self.visit(tree.children[0]) + "++"
     def dec(self, tree):
