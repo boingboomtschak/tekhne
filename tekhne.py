@@ -213,16 +213,18 @@ class WGSLCodeGenerator:
         buf += self.visit(tree.children[2]) + ")"
         self.depth += 1
         if len(tree.children) > 4:
-            buf += " {\n" + self.visit_children(tree.children[3:]) + ((self.depth - 1) * self.TAB) + "}"
+            buf += " {\n" + self.visit_children(tree.children[3:]) 
+            buf += ((self.depth - 1) * self.TAB) + "}"
         else:
             buf += "\n" + self.visit(tree.children[3]) 
         self.depth -= 1
         return buf
     def while_loop(self, tree):
-        buf = "while (" + self.visit(tree.children[0]) + ") "
+        buf = "while (" + self.visit(tree.children[0]) + ")"
         self.depth += 1
         if len(tree.children) > 2:
-            buf += "{\n" + self.visit_children(tree.children[1:]) + ((self.depth - 1) * self.TAB) + "}"
+            buf += " {\n" + self.visit_children(tree.children[1:]) 
+            buf += ((self.depth - 1) * self.TAB) + "}"
         else:
             buf += "\n" + self.visit(tree.children[1])
         self.depth -= 1
@@ -231,26 +233,35 @@ class WGSLCodeGenerator:
         buf = f'if ({self.visit(tree.children[0])})'
         self.depth += 1
         if len(tree.children) > 2:
-            buf += " {\n" + self.visit_children(tree.children[1:]) + ((self.depth - 1) * self.TAB) + "} "
-        else:
+            buf += " {\n" + self.visit_children(tree.children[1:])
+            buf += ((self.depth - 1) * self.TAB) + "} "
+        elif len(tree.children) == 2:
             buf += "\n" + self.visit(tree.children[1])
+        else:
+            buf += " {\n\n" + ((self.depth - 1) * self.TAB) + "} "
         self.depth -= 1
         return buf
     def conditional_else(self, tree):
         buf = 'else '
-        if tree.children[0].children[0].data == 'conditional':
+        if (len(tree.children) == 1 
+            and len(tree.children[0].children) == 1 
+            and tree.children[0].children[0].data == 'conditional'):
             buf += self.visit(tree.children[0].children[0])
         else:
             self.depth += 1
             if len(tree.children) > 1:
-                buf += "{\n" + self.visit_children(tree.children) + ((self.depth - 1) * self.TAB) + "}"
-            else:
+                buf += "{\n" + self.visit_children(tree.children)
+                buf += ((self.depth - 1) * self.TAB) + "}"
+            elif len(tree.children) == 1:
                 buf += "\n" + self.visit(tree.children[0])
+            else:
+                buf += "{\n\n" + ((self.depth - 1) * self.TAB) + "} "
             self.depth -= 1
         return buf
     def conditional(self, tree):
         if len(tree.children) == 2 and len(tree.children[0].children) == 2:
-            return self.visit(tree.children[0]) + (self.depth * self.TAB) + self.visit(tree.children[1])
+            buf = self.visit(tree.children[0])
+            return buf + (self.depth * self.TAB) + self.visit(tree.children[1])
         return self.visit_children(tree.children)
     def declaration(self, tree):
         buf = f"var {self.visit(tree.children[1])} : {self.visit(tree.children[0])}"
