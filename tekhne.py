@@ -270,7 +270,10 @@ class WGSLCodeGenerator:
         buf += ";"
         return buf
     def statement(self, tree):
-        return (self.depth * self.TAB) + self.visit(tree.children[0]) + "\n"
+        buf = (self.depth * self.TAB) + self.visit(tree.children[0])
+        if tree.children[0].data not in ('while_loop', 'for_loop'):
+            buf += "\n"
+        return buf
     def ctype(self, tree):
         tok = self.visit(tree.children[0])
         if tok in self.TYPE_REDEFS:
