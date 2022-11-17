@@ -181,9 +181,21 @@ class WGSLCodeGenerator:
         'int' : 'i32',
         'float' : 'f32'
     }  
+    BUILTINS = {
+        "gridDim" : { 'name': 'num_workgroups', 'type': 'vec3<u32>' },
+        "blockDim" : { 'name': 'FIXME', 'type': 'FIXME' },
+        "threadIdx" : { 'name': 'FIXME', 'type': 'FIXME' },
+        "blockIdx" : { 'name': 'FIXME', 'type': 'FIXME' },
+        "warpSize" : { 'name': 'FIXME', 'type': 'FIXME' }
+    }
     def __init__(self, tab='    '):
         self.depth = 0
         self.TAB = tab
+        self.tokens = {}
+    def retrieveTokens(self, tree):
+        if isinstance(tree, Token):
+            return { str(tree) }
+        return set().union(*[self.retrieveTokens(c) for c in tree.children])
     def visit(self, tree):
         if isinstance(tree, Token):
             return str(tree)
@@ -198,6 +210,8 @@ class WGSLCodeGenerator:
     def start(self, tree):
         return "".join([self.visit(c) for c in tree.children])
     def kernelspec(self, tree):
+        # Retrieving tokens for kernel declaration
+        self.tokens = self.retrieveTokens(tree)
         buf = "@compute\n"
         buf += self.visit(tree.children[2])
         self.depth += 1
@@ -205,7 +219,11 @@ class WGSLCodeGenerator:
         self.depth -= 1
         return buf
     def kerneldecl(self, tree):
-        return "fn main()" # See todos for changes here
+        builtins = self.tokens.intersection(set(self.BUILTINS.keys()))
+        buf = "fn main("
+        buf += ', '.join([f"@builtin({self.BUILTINS[b]['name']}) {self.BUILTINS[b]['name']} : {self.BUILTINS[b]['type']}" for b in builtins])
+        buf += ")"
+        return buf # See todos for changes here
     def for_loop(self, tree):
         buf = "for ("
         buf += self.visit(tree.children[0]) + " "
@@ -369,8 +387,9 @@ if args['parse_tree']:
     log.debug("Parse tree generated.")
 
 log.debug("Running code generator...")
+codegen = WGSLCodeGenerator()
 log.debug("Generated code:")
 if args.get('debug'):
-    sys.stdout.write(WGSLCodeGenerator().visit(parsed) + "\n")
+    sys.stdout.write(codegen.visit(parsed) + "\n")
 
 log.debug("Exiting...")
