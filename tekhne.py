@@ -13,7 +13,7 @@ from lark import tree as LarkTree
 argparser = argparse.ArgumentParser(description="CUDA to WGSL transpiler")
 argparser.add_argument("input", help="Path to input .cu file")
 argparser.add_argument("-o", "--output", help="Path to output .wgsl file")
-argparser.add_argument("-d", "--debug", action="store_true", help="Show debug information")
+argparser.add_argument("-d", "-D", "--debug", action="store_true", help="Show debug information")
 argparser.add_argument("-f" ,"--file-log", action="store_true", help="Store logs to 'tekhne.log'")
 argparser.add_argument("-t", "--parse-tree", action="store_true", \
     help="Save parse tree to 'parse-tree.png'")
@@ -183,10 +183,10 @@ class WGSLCodeGenerator:
     }  
     BUILTINS = {
         "gridDim" : { 'name': 'num_workgroups', 'type': 'vec3<u32>' },
-        "blockDim" : { 'name': 'FIXME', 'type': 'FIXME' },
-        "threadIdx" : { 'name': 'FIXME', 'type': 'FIXME' },
-        "blockIdx" : { 'name': 'FIXME', 'type': 'FIXME' },
-        "warpSize" : { 'name': 'FIXME', 'type': 'FIXME' }
+        "blockDim" : { 'name': 'FIXME', 'type': 'FIXME' }, # workgroup size?
+        "threadIdx" : { 'name': 'local_invocation_id', 'type': 'vec3<u32>' },
+        "blockIdx" : { 'name': 'workgroup_id', 'type': 'vec3<u32>' },
+        # "warpSize" : { 'name': 'FIXME', 'type': 'FIXME' }
     }
     def __init__(self, tab='    '):
         self.depth = 0
